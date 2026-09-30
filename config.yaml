@@ -1,0 +1,99 @@
+# Resolution x augmentation study on SULAND_v2.
+#
+# Grid = seeds x models x imgsz x augmentation  ->  1 x 2 x 2 x 2 = 8 runs.
+# Every run trains on IID train, selects its checkpoint on IID val only, and is
+# then scored on IID test and on the OOD split.
+
+data:
+  # Absolute paths on the SERVER. Each root must contain <split>/images and
+  # <split>/labels (YOLO txt). Labels must use the SULAND_v2 convention:
+  # class 0 = PFM-1 ("butterfly"), class 1 = PMA-2 ("starfish"), in every split.
+  iid_root: /path/to/SULAND_v2/iid        # contains train/ val/ test/
+  ood_root: /path/to/SULAND_v2/ood        # contains val/
+  iid_splits: {train: train, val: val, test: test}
+  ood_split: val
+  class_names: [PFM-1, PMA-2]
+
+models:
+  # tag -> pretrained weights (downloaded automatically by ultralytics).
+  # YOLOv8-S is the SULAND reference model; YOLOv10-S has not been evaluated
+  # on SULAND before. Swap in yolo11s.pt / yolov9s.pt here if you prefer.
+  v8s: yolov8s.pt
+  v10s: yolov10s.pt
+
+imgsz: [640, 1024]
+
+# "noaug" reproduces the SULAND_v2 benchmark setting (no augmentation).
+# "aug" is the standard ultralytics detection recipe, written out explicitly so
+# the run does not depend on the defaults of the installed version.
+augmentation:
+  noaug:
+    hsv_h: 0.0
+    hsv_s: 0.0
+    hsv_v: 0.0
+    degrees: 0.0
+    translate: 0.0
+    scale: 0.0
+    shear: 0.0
+    perspective: 0.0
+    flipud: 0.0
+    fliplr: 0.0
+    mosaic: 0.0
+    mixup: 0.0
+    copy_paste: 0.0
+    close_mosaic: 0
+  aug:
+    hsv_h: 0.015
+    hsv_s: 0.7
+    hsv_v: 0.4
+    degrees: 0.0
+    translate: 0.1
+    scale: 0.5
+    shear: 0.0
+    perspective: 0.0
+    flipud: 0.0
+    fliplr: 0.5
+    mosaic: 1.0
+    mixup: 0.0
+    copy_paste: 0.0
+    close_mosaic: 10
+
+seeds: [0]          # add more (e.g. [0, 1, 2]) for mean +- std; multiplies runs
+
+train:
+  epochs: 50
+  patience: 15      # early stopping on IID val fitness; 0 disables
+  # Per-resolution batch size. ultralytics accumulates round(64 / batch)
+  # batches before each optimiser step, so the effective batch is
+  # batch * round(64 / batch). Use values that DIVIDE 64 (8, 16, 32, 64) so every
+  # run updates on exactly 64 images: e.g. 48 -> 48, 24 -> 72 (not comparable).
+  # On a 24 GB GPU, 1024 at batch 32 used ~23 GB (too close); 16 is safe.
+  batch: {640: 32, 1024: 16}
+  optimizer: SGD    # fixed so both models use the same optimiser
+  lr0: 0.01
+  momentum: 0.937
+  weight_decay: 0.0005
+  warmup_epochs: 3
+  device: "0"       # "0", "0,1" for multi-GPU, or "cpu"
+  workers: 8
+  cache: false      # "ram" is fastest if the server has > 64 GB RAM, "disk" otherwise
+  amp: true
+  deterministic: true
+  project: runs     # output folder, relative to this directory
+
+eval:
+  conf: 0.001       # standard mAP protocol (full PR curve)
+  nms_iou: 0.5      # NMS IoU used by val and predict (ignored by YOLOv10, which is NMS-free)
+  max_det: 300
+  batch: 16
+  match_iou: 0.5    # IoU for TP/FP matching in the operating-point metrics
+  precision_target: 0.90   # recall is reported at this precision (threshold set on IID val)
+  fixed_conf: 0.25  # an additional fixed deployment threshold
+  # Object-size buckets for "AP by size", as sqrt(box area) in NATIVE pixels:
+  # small < 64 <= medium < 128 <= large. On SULAND_v2 (1440x1920 images) this
+  # splits IID boxes into roughly equal thirds; OOD mines are larger (74% large).
+  # At 640 input, 64 / 128 native px become about 21 / 43 px. The COCO defaults
+  # (32, 96) would put almost every SULAND mine into "large".
+  size_bins_px: [64, 128]
+  latency_images: 200      # OOD images timed at batch 1 for latency
+  results_dir: results

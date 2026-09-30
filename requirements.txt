@@ -1,0 +1,13 @@
+# Install PyTorch FIRST, matching the server's CUDA version, from https://pytorch.org
+#   e.g.  pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+# Then:   pip install -r requirements.txt
+#
+# Tested end to end with ultralytics 8.3.253. YOLOv10 needs >= 8.2; the 8.4
+# series changed internals, so stay on 8.3.x for the whole study.
+ultralytics>=8.3.0,<8.4.0
+pycocotools>=2.0.7
+pandas>=2.0
+matplotlib>=3.7
+PyYAML>=6.0
+Pillow>=10.0
+numpy>=1.24
